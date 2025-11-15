@@ -1,21 +1,224 @@
 // widgets/sale_details_dialog.dart
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:shopmate/models/customer.dart';
+import 'package:shopmate/widgets/customer_selection_dialog.dart';
 import '../models/sale.dart';
 import '../providers/sales_provider.dart';
 
-class SaleDetailsDialog extends StatelessWidget {
+class SaleDetailsDialog extends StatefulWidget {
   final int saleId;
 
   const SaleDetailsDialog({super.key, required this.saleId});
 
+  @override
+  State<SaleDetailsDialog> createState() => _SaleDetailsDialogState();
+}
+
+class _SaleDetailsDialogState extends State<SaleDetailsDialog> {
+  late Future<Map<String, dynamic>> _saleDetailsFuture;
+  final SalesProvider _salesProvider = SalesProvider(); // إنشاء instance مباشر
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshSaleDetails();
+  }
+
+  void _refreshSaleDetails() {
+    setState(() {
+      _saleDetailsFuture = _salesProvider.getSaleDetails(widget.saleId);
+    });
+  }
+
+  Future<void> _updatePaymentType(
+    String newPaymentType, {
+    Customer? selectedCustomer,
+  }) async {
+    try {
+      if (newPaymentType == 'credit' && selectedCustomer == null) {
+        // إذا كان credit ولم يتم اختيار زبون، نفتح dialog اختيار الزبون
+        await _showCustomerSelectionDialog(newPaymentType);
+        return;
+      }
+
+      // استخدام الـ provider مباشرة
+      await _salesProvider.updatePaymentType(
+        widget.saleId,
+        newPaymentType,
+        customerId: selectedCustomer?.id,
+      );
+
+      _refreshSaleDetails(); // تحديث البيانات بعد التعديل
+
+      // عرض رسالة نجاح
+      if (mounted) {
+        String message =
+            newPaymentType == 'cash'
+                ? 'تم تغيير نوع الدفع إلى نقدي'
+                : 'تم تغيير نوع الدفع إلى آجل للزبون ${selectedCustomer?.name}';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل في تعديل نوع الدفع: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showCustomerSelectionDialog(String paymentType) async {
+    try {
+      final Customer? selectedCustomer = await showDialog<Customer>(
+        context: context,
+        builder:
+            (context) => CustomerSelectionDialog(
+              onSaleCompleted: (customer) {
+                Navigator.pop(context, customer); // إرجاع الزبون المختار
+              },
+            ),
+      );
+
+      if (selectedCustomer != null && mounted) {
+        // إذا تم اختيار زبون، نكمل عملية التحديث
+        await _updatePaymentType(
+          paymentType,
+          selectedCustomer: selectedCustomer,
+        );
+      } else if (mounted) {
+        // إذا تم إلغاء العملية، نعرض رسالة فقط إذا كانت الصفحة مازالت مفتوحة
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم إلغاء تغيير نوع الدفع'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('حدث خطأ أثناء اختيار الزبون: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showPaymentTypeDialog(BuildContext context, String currentPaymentType) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('تغيير نوع الدفع'),
+            content: const Text('اختر نوع الدفع الجديد:'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _updatePaymentType('cash');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      currentPaymentType == 'cash'
+                          ? Colors.green
+                          : Colors.grey[300],
+                  foregroundColor:
+                      currentPaymentType == 'cash'
+                          ? Colors.white
+                          : Colors.black,
+                ),
+                child: const Text('نقدي 💵'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _updatePaymentType('credit');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      currentPaymentType == 'credit'
+                          ? Colors.orange
+                          : Colors.grey[300],
+                  foregroundColor:
+                      currentPaymentType == 'credit'
+                          ? Colors.white
+                          : Colors.black,
+                ),
+                child: const Text('آجل 📅'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  void _showShowForTaxDialog(BuildContext context, bool currentShowForTax) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('تغيير حاله عرض الضرائب'),
+            content: const Text('اختر حاله عرض الضرائب:'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  updateShowForTax(widget.saleId, true);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      currentShowForTax ? Colors.green : Colors.grey[300],
+                  foregroundColor:
+                      currentShowForTax ? Colors.white : Colors.black,
+                ),
+                child: const Text('تضمنه بالضرائب ✅'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  updateShowForTax(widget.saleId, false);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      currentShowForTax ? Colors.orange : Colors.grey[300],
+                  foregroundColor:
+                      currentShowForTax ? Colors.white : Colors.black,
+                ),
+                child: const Text('غير تضمنه بالضرائب ❌'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  // باقي الكود يبقى كما هو مع بعض التعديلات البسيطة...
   @override
   Widget build(BuildContext context) {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       insetPadding: const EdgeInsets.all(20),
       child: FutureBuilder<Map<String, dynamic>>(
-        future: context.read<SalesProvider>().getSaleDetails(saleId),
+        future: _saleDetailsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return _buildLoadingState();
@@ -41,9 +244,7 @@ class SaleDetailsDialog extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-          ),
+          const CircularProgressIndicator(),
           const SizedBox(height: 20),
           Text(
             'جاري تحميل الفاتورة',
@@ -52,11 +253,6 @@ class SaleDetailsDialog extends StatelessWidget {
               fontWeight: FontWeight.bold,
               color: Colors.grey[700],
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '#$saleId',
-            style: const TextStyle(fontSize: 16, color: Colors.grey),
           ),
         ],
       ),
@@ -69,7 +265,7 @@ class SaleDetailsDialog extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.error_outline, size: 60, color: Colors.red[400]),
+          const Icon(Icons.error_outline, size: 60, color: Colors.red),
           const SizedBox(height: 16),
           const Text(
             'خطأ في التحميل',
@@ -79,29 +275,10 @@ class SaleDetailsDialog extends StatelessWidget {
               color: Colors.red,
             ),
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'تعذر تحميل تفاصيل الفاتورة',
-            style: TextStyle(fontSize: 16),
-            textAlign: TextAlign.center,
-          ),
           const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text(
-                'إغلاق',
-                style: TextStyle(fontSize: 16, color: Colors.white),
-              ),
-            ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إغلاق'),
           ),
         ],
       ),
@@ -120,24 +297,15 @@ class SaleDetailsDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // رأس الفاتورة
             _buildInvoiceHeader(sale),
             const SizedBox(height: 24),
-
-            // معلومات الفاتورة
-            _buildInvoiceInfo(sale),
+            _buildInvoiceInfo(context, sale),
             const SizedBox(height: 20),
-
-            // قائمة المنتجات
             _buildProductsSection(items),
             const SizedBox(height: 20),
-
-            // الملخص المالي
             _buildFinancialSummary(sale),
             const SizedBox(height: 24),
-
-            // زر الإغلاق
-            _buildActionButton(context),
+            _buildActionButtons(context, sale),
           ],
         ),
       ),
@@ -150,11 +318,9 @@ class SaleDetailsDialog extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.blue[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue[100]!),
       ),
       child: Column(
         children: [
-          // رقم الفاتورة
           Text(
             'فاتورة رقم #${sale.id}',
             style: const TextStyle(
@@ -164,24 +330,16 @@ class SaleDetailsDialog extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-
-          // التاريخ والوقت
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
               const SizedBox(width: 6),
-              Text(
-                sale.formattedDate,
-                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-              ),
+              Text(sale.formattedDate),
               const SizedBox(width: 16),
               Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
               const SizedBox(width: 6),
-              Text(
-                sale.formattedTime,
-                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-              ),
+              Text(sale.formattedTime),
             ],
           ),
         ],
@@ -189,7 +347,7 @@ class SaleDetailsDialog extends StatelessWidget {
     );
   }
 
-  Widget _buildInvoiceInfo(Sale sale) {
+  Widget _buildInvoiceInfo(BuildContext context, Sale sale) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -198,25 +356,105 @@ class SaleDetailsDialog extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // نوع البيع
-          _buildInfoItem(
-            icon: Icons.payment,
-            title: 'نوع البيع',
-            value: sale.paymentType == 'cash' ? 'نقدي 💵' : 'آجل 📅',
-            valueColor:
-                sale.paymentType == 'cash' ? Colors.green : Colors.orange,
-          ),
+          _buildEditablePaymentType(context, sale),
           const SizedBox(height: 12),
-
-          // العميل
           _buildInfoItem(
             icon: Icons.person,
             title: 'العميل',
             value: sale.customerName ?? 'بدون عميل',
             valueColor: Colors.blue,
           ),
+          const SizedBox(height: 12),
+
+          _buildEditShowForTax(context, sale),
         ],
       ),
+    );
+  }
+
+  Widget _buildEditablePaymentType(BuildContext context, Sale sale) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.payment, size: 18, color: Colors.grey[600]),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'نوع الدفع',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                sale.paymentType == 'cash' ? 'نقدي 💵' : 'آجل 📅',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color:
+                      sale.paymentType == 'cash' ? Colors.green : Colors.orange,
+                ),
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.edit, size: 20),
+          onPressed: () => _showPaymentTypeDialog(context, sale.paymentType),
+          tooltip: 'تغيير نوع الدفع',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEditShowForTax(BuildContext context, Sale sale) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.receipt, size: 18, color: Colors.grey[600]),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'عرض للضرائب',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                sale.showForTax ? 'مضمنه بالضرائب ✅' : 'عدم مضمنه بالضرائب ❌',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color:
+                      sale.showForTax
+                          ? Colors.green
+                          : const Color.fromARGB(255, 219, 91, 5),
+                ),
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.edit, size: 20),
+          onPressed: () => _showShowForTaxDialog(context, sale.showForTax),
+          tooltip: 'تغيير حالة عرض الضرائب',
+        ),
+      ],
     );
   }
 
@@ -228,15 +466,7 @@ class SaleDetailsDialog extends StatelessWidget {
   }) {
     return Row(
       children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.grey[300]!),
-          ),
-          child: Icon(icon, size: 18, color: Colors.grey[600]),
-        ),
+        Icon(icon, size: 18, color: Colors.grey[600]),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -246,7 +476,6 @@ class SaleDetailsDialog extends StatelessWidget {
                 title,
                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
-              const SizedBox(height: 2),
               Text(
                 value,
                 style: TextStyle(
@@ -266,20 +495,11 @@ class SaleDetailsDialog extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // عنوان القسم
-        Row(
-          children: [
-            Icon(Icons.shopping_basket, color: Colors.blue[700]),
-            const SizedBox(width: 8),
-            const Text(
-              'المنتجات المشتراة',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ],
+        const Text(
+          'المنتجات المشتراة',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-
-        // قائمة المنتجات
         Container(
           decoration: BoxDecoration(
             border: Border.all(color: Colors.grey[300]!),
@@ -287,7 +507,6 @@ class SaleDetailsDialog extends StatelessWidget {
           ),
           child: Column(
             children: [
-              // رأس الجدول
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -302,46 +521,18 @@ class SaleDetailsDialog extends StatelessWidget {
                 ),
                 child: const Row(
                   children: [
+                    Expanded(flex: 3, child: Text('المنتج')),
                     Expanded(
-                      flex: 3,
-                      child: Text(
-                        'المنتج',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                      child: Text('الكمية', textAlign: TextAlign.center),
                     ),
+                    Expanded(child: Text('السعر', textAlign: TextAlign.center)),
                     Expanded(
-                      child: Text(
-                        'الكمية',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        'السعر',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        'المجموع',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center,
-                      ),
+                      child: Text('المجموع', textAlign: TextAlign.center),
                     ),
                   ],
                 ),
               ),
-
-              // عناصر المنتجات
-              ...items.asMap().entries.map((entry) {
-                final index = entry.key;
-                final item = entry.value;
-                final isLast = index == items.length - 1;
-
-                return _buildProductRow(item, isLast);
-              }).toList(),
+              ...items.map((item) => _buildProductRow(item)).toList(),
             ],
           ),
         ),
@@ -349,7 +540,7 @@ class SaleDetailsDialog extends StatelessWidget {
     );
   }
 
-  Widget _buildProductRow(Map<String, dynamic> item, bool isLast) {
+  Widget _buildProductRow(Map<String, dynamic> item) {
     final productName = item['product_name'] ?? 'منتج';
     final quantity = item['quantity'] as int;
     final price = item['price'] as double;
@@ -358,52 +549,25 @@ class SaleDetailsDialog extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        border: Border(
-          bottom:
-              isLast ? BorderSide.none : BorderSide(color: Colors.grey[200]!),
-        ),
+        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
       ),
       child: Row(
         children: [
-          // اسم المنتج
+          Expanded(flex: 3, child: Text(productName)),
           Expanded(
-            flex: 3,
-            child: Text(
-              productName,
-              style: const TextStyle(fontSize: 14),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text(quantity.toString(), textAlign: TextAlign.center),
           ),
-
-          // الكمية
+          Expanded(
+            child: Text(price.toStringAsFixed(0), textAlign: TextAlign.center),
+          ),
           Expanded(
             child: Text(
-              quantity.toString(),
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              subtotal.toStringAsFixed(0),
               textAlign: TextAlign.center,
-            ),
-          ),
-
-          // السعر
-          Expanded(
-            child: Text(
-              '${price.toStringAsFixed(0)}',
-              style: const TextStyle(fontSize: 14),
-              textAlign: TextAlign.center,
-            ),
-          ),
-
-          // المجموع
-          Expanded(
-            child: Text(
-              '${subtotal.toStringAsFixed(0)}',
               style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
                 color: Colors.blue,
+                fontWeight: FontWeight.bold,
               ),
-              textAlign: TextAlign.center,
             ),
           ),
         ],
@@ -417,25 +581,19 @@ class SaleDetailsDialog extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.green[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.green[100]!),
       ),
       child: Column(
         children: [
-          // المبلغ الإجمالي
           _buildSummaryRow(
             label: 'المبلغ الإجمالي',
             value: '${sale.totalAmount.toStringAsFixed(0)} ليرة سورية',
             valueColor: Colors.blue[700]!,
-            icon: Icons.receipt,
           ),
           const SizedBox(height: 12),
-
-          // إجمالي الربح
           _buildSummaryRow(
             label: 'إجمالي الربح',
             value: '${sale.totalProfit.toStringAsFixed(0)} ليرة سورية',
             valueColor: Colors.green[700]!,
-            icon: Icons.attach_money,
           ),
         ],
       ),
@@ -446,66 +604,75 @@ class SaleDetailsDialog extends StatelessWidget {
     required String label,
     required String value,
     required Color valueColor,
-    required IconData icon,
   }) {
     return Row(
       children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, size: 18, color: valueColor),
-        ),
-        const SizedBox(width: 12),
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
         Text(
           value,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: valueColor,
+          style: TextStyle(fontWeight: FontWeight.bold, color: valueColor),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context, Sale sale) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: () => _showPaymentTypeDialog(context, sale.paymentType),
+            child: const Text('تغيير نوع الدفع'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('تمت المشاهدة'),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildActionButton(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: () => Navigator.pop(context),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blue[700],
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+  Future<void> updateShowForTax(int saleId, bool bool) async {
+    try {
+      // استخدام الـ provider مباشرة
+      await _salesProvider.updateShowForTax(widget.saleId, bool);
+
+      _refreshSaleDetails(); // تحديث البيانات بعد التعديل
+
+      // عرض رسالة نجاح
+      if (mounted) {
+        String message =
+            bool
+                ? 'تم تغيير نوع حالة عرض الضرائب إلى تضمنه بالضرائب ✅'
+                : 'تم تغيير نوع حالة عرض الضرائب إلى غير تضمنه بالضرائب ❌';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
           ),
-          elevation: 2,
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.check, color: Colors.white, size: 20),
-            SizedBox(width: 8),
-            Text(
-              'تمت المشاهدة',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل في تعديل نوع عرضه للضرائب: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 }

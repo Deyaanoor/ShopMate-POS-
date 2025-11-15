@@ -22,12 +22,14 @@ class SalesProvider extends ChangeNotifier {
   // الفلاتر
   String _selectedPaymentType = 'الكل';
   String _selectedCustomer = 'الكل';
+  String _selectedTaxFilter = 'الكل';
   DateTime? _selectedDate;
 
   // Getters for filters
   String get selectedPaymentType => _selectedPaymentType;
   String get selectedCustomer => _selectedCustomer;
   DateTime? get selectedDate => _selectedDate;
+  String get selectedTaxFilter => _selectedTaxFilter;
 
   // قيم الفلاتر
   List<String> get paymentTypes => ['الكل', 'cash', 'credit'];
@@ -755,10 +757,16 @@ class SalesProvider extends ChangeNotifier {
     _applyFilters();
   }
 
+  void setTaxFilter(String? value) {
+    _selectedTaxFilter = value ?? 'الكل';
+    _applyFilters();
+  }
+
   void clearFilters() {
     _selectedPaymentType = 'الكل';
     _selectedCustomer = 'الكل';
     _selectedDate = null;
+    _selectedTaxFilter = 'الكل';
     _filteredSales = _sales;
     notifyListeners();
   }
@@ -781,6 +789,19 @@ class SalesProvider extends ChangeNotifier {
             }
           }
 
+          // فلتر الضريبة
+          if (_selectedTaxFilter != 'الكل') {
+            // حول القيمة إلى boolean للمقارنة
+            bool isIncluded = (sale.showForTax == 1 || sale.showForTax == true);
+
+            if (_selectedTaxFilter == 'مضمنه بالضرائب' && !isIncluded) {
+              return false;
+            }
+            if (_selectedTaxFilter == 'غير مضمنه بالضرائب' && isIncluded) {
+              return false;
+            }
+          }
+
           // فلتر التاريخ
           if (_selectedDate != null) {
             try {
@@ -798,6 +819,20 @@ class SalesProvider extends ChangeNotifier {
           return true;
         }).toList();
 
+    notifyListeners();
+  }
+
+  // دالة لإعادة تعيين الحالة
+  void reset() {
+    _sales.clear();
+    _filteredSales.clear();
+    _isLoading = false;
+    _hasMore = true;
+    _page = 0;
+    _selectedPaymentType = 'الكل';
+    _selectedCustomer = 'الكل';
+    _selectedDate = null;
+    _selectedTaxFilter = 'الكل';
     notifyListeners();
   }
 
@@ -832,5 +867,68 @@ class SalesProvider extends ChangeNotifier {
     );
 
     return {'sale': Sale.fromMap(saleResult.first), 'items': itemsResult};
+  }
+
+  Future<void> updatePaymentType(
+    int saleId,
+    String paymentType, {
+    int? customerId,
+  }) async {
+    final db = await _dbHelper.db;
+
+    // تأكد إن القيمة فقط 'cash' أو 'credit'
+    if (paymentType != 'cash' && paymentType != 'credit') {
+      throw Exception('نوع الدفع غير صالح. يجب أن يكون "cash" أو "credit".');
+    }
+
+    // إعداد البيانات للتحديث
+    Map<String, dynamic> updateData = {'payment_type': paymentType};
+
+    // إذا كان credit وتم تمرير customerId، أضفه للبيانات
+    if (paymentType == 'credit') {
+      updateData['customer_id'] = customerId;
+    } else if (paymentType == 'cash') {
+      // إذا كان cash، اجعل customer_id فارغ
+      updateData['customer_id'] = null;
+    }
+
+    // تنفيذ التحديث في قاعدة البيانات
+    int count = await db.update(
+      'sales',
+      updateData,
+      where: 'id = ?',
+      whereArgs: [saleId],
+    );
+
+    // تحقق إذا لم يتم التحديث لأي سجل
+    if (count == 0) {
+      throw Exception('فشل التعديل: لم يتم العثور على الفاتورة بالرقم المحدد.');
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> updateShowForTax(int saleId, bool showForTax) async {
+    final db = await _dbHelper.db;
+
+    // إعداد البيانات للتحديث
+    Map<String, dynamic> updateData = {
+      'show_for_tax': showForTax ? 1 : 0, // 1: نعم، 0: لا
+    };
+
+    // تنفيذ التحديث في قاعدة البيانات
+    int count = await db.update(
+      'sales',
+      updateData,
+      where: 'id = ?',
+      whereArgs: [saleId],
+    );
+
+    // تحقق إذا لم يتم التحديث لأي سجل
+    if (count == 0) {
+      throw Exception('فشل التعديل: لم يتم العثور على الفاتورة بالرقم المحدد.');
+    }
+
+    notifyListeners();
   }
 }

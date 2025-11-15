@@ -417,8 +417,6 @@ class _PosScreenState extends State<PosScreen> {
   Future<void> _printInvoice() async {
     if (_cartItems.isEmpty) return;
 
-    await _provider.addSale(cartItems: _cartItems, totalAmount: _totalAmount);
-
     showDialog(
       context: context,
       builder:
@@ -438,9 +436,9 @@ class _PosScreenState extends State<PosScreen> {
                 child: const Text('إلغاء'),
               ),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   Navigator.pop(context);
-                  _processSale(printInvoice: true);
+                  await _processSaleWithValidation(printInvoice: true);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF8B5FBF),
@@ -454,8 +452,6 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _completeSale() async {
     if (_cartItems.isEmpty) return;
-
-    await _provider.addSale(cartItems: _cartItems, totalAmount: _totalAmount);
 
     showDialog(
       context: context,
@@ -476,12 +472,76 @@ class _PosScreenState extends State<PosScreen> {
                 child: const Text('إلغاء'),
               ),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   Navigator.pop(context);
-                  _processSale(printInvoice: false);
+                  await _processSaleWithValidation(printInvoice: false);
                 },
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                 child: const Text('نعم، إتمام البيع'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  Future<void> _processSaleWithValidation({bool printInvoice = false}) async {
+    try {
+      // محاولة إتمام البيع مع التحقق من الكميات
+      await _provider.addSale(cartItems: _cartItems, totalAmount: _totalAmount);
+
+      // إذا نجحت العملية بدون أخطاء، نكمل
+      if (printInvoice) {
+        // كود الطباعة هنا
+      }
+
+      setState(() {
+        _cartItems.clear();
+        _totalAmount = 0.0;
+      });
+
+      // عرض رسالة نجاح
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تمت عملية البيع بنجاح'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      // في حالة وجود خطأ في الكمية، نعرض popup ولا نكمل العملية
+      _showQuantityErrorDialog(e.toString());
+    }
+  }
+
+  void _showQuantityErrorDialog(String errorMessage) {
+    showDialog(
+      context: context,
+      barrierDismissible:
+          false, // المستخدم لا يمكنه إغلاق الـ dialog بالنقر خارجها
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.error, color: Colors.red),
+                SizedBox(width: 8),
+                Text('خطأ في الكمية', style: TextStyle(color: Colors.red)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(errorMessage),
+                const SizedBox(height: 16),
+                const Text(
+                  'عملية البيع لم تكتمل. الرجاء تعديل الكميات والمحاولة مرة أخرى.',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('موافق'),
               ),
             ],
           ),
@@ -495,28 +555,40 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<void> _showCustomerSelectionDialog() async {
-    return showDialog(
+    final Customer? selectedCustomer = await showDialog<Customer>(
       context: context,
       builder:
-          (context) =>
-              CustomerSelectionDialog(onSaleCompleted: _handleSaleCompletion),
+          (context) => CustomerSelectionDialog(
+            onSaleCompleted: (customer) {
+              Navigator.pop(context, customer); // إرجاع الزبون المختار
+            },
+          ),
     );
+
+    if (selectedCustomer != null) {
+      await _handleSaleCompletion(selectedCustomer);
+    }
   }
 
   Future<void> _handleSaleCompletion(Customer customer) async {
-    await _provider.addSale(
-      cartItems: _cartItems,
-      totalAmount: _totalAmount,
-      paymentType: 'credit',
-      customerId: customer.id,
-    );
+    try {
+      await _provider.addSale(
+        cartItems: _cartItems,
+        totalAmount: _totalAmount,
+        paymentType: 'credit',
+        customerId: customer.id,
+      );
 
-    await _showSaleConfirmationDialog();
+      await _showSaleConfirmationDialog();
 
-    setState(() {
-      _cartItems.clear();
-      _totalAmount = 0.0;
-    });
+      setState(() {
+        _cartItems.clear();
+        _totalAmount = 0.0;
+      });
+    } catch (e) {
+      // في حالة وجود خطأ في الكمية، نعرض popup ولا نكمل العملية
+      _showQuantityErrorDialog(e.toString());
+    }
   }
 
   Future<void> _showSaleConfirmationDialog() async {
@@ -525,137 +597,6 @@ class _PosScreenState extends State<PosScreen> {
       builder: (context) => const SaleConfirmationDialog(),
     );
   }
-
-  // Future<void> _recordDebtSale() async {
-  //   if (_cartItems.isEmpty) return;
-
-  //   // عرض Dialog لاختيار الزبون
-  //   await showDialog(
-  //     context: context,
-  //     builder: (context) {
-  //       return StatefulBuilder(
-  //         builder: (context, setState) {
-  //           return Consumer<CustomerProvider>(
-  //             builder: (context, provider, _) {
-  //               final customers = provider.customers;
-
-  //               return AlertDialog(
-  //                 title: const Text('اختر الزبون'),
-  //                 content: Column(
-  //                   mainAxisSize: MainAxisSize.min,
-  //                   children: [
-  //                     DropdownButton<Customer>(
-  //                       value: _selectedCustomer,
-  //                       hint: const Text('اختر زبون'),
-  //                       isExpanded: true,
-  //                       items:
-  //                           customers.map((customer) {
-  //                             return DropdownMenuItem(
-  //                               value: customer,
-  //                               child: Text(customer.name),
-  //                             );
-  //                           }).toList(),
-  //                       onChanged: (value) {
-  //                         setState(() {
-  //                           _selectedCustomer = value;
-  //                         });
-  //                       },
-  //                     ),
-  //                     const SizedBox(height: 8),
-  //                     TextButton.icon(
-  //                       icon: const Icon(Icons.add),
-  //                       label: const Text('إضافة زبون جديد'),
-  //                       onPressed: () {
-  //                         Navigator.pop(context); // إغلاق Dialog الحالي
-  //                         showDialog(
-  //                           context: context,
-  //                           builder:
-  //                               (context) => CustomerFormDialog(
-  //                                 onSave: (customer) async {
-  //                                   await provider.addCustomer(customer);
-
-  //                                   ScaffoldMessenger.of(context).showSnackBar(
-  //                                     SnackBar(
-  //                                       content: Text(
-  //                                         'تم إضافة العميل ${customer.name}',
-  //                                       ),
-  //                                       backgroundColor: Colors.green,
-  //                                     ),
-  //                                   );
-
-  //                                   // إعادة فتح Dialog لاختيار الزبون بعد الإضافة
-  //                                   _recordDebtSale();
-  //                                 },
-  //                               ),
-  //                         );
-  //                       },
-  //                     ),
-  //                   ],
-  //                 ),
-  //                 actions: [
-  //                   TextButton(
-  //                     onPressed: () => Navigator.pop(context),
-  //                     child: const Text('إلغاء'),
-  //                   ),
-  //                   ElevatedButton(
-  //                     onPressed:
-  //                         _selectedCustomer == null
-  //                             ? null
-  //                             : () async {
-  //                               Navigator.pop(context);
-  //                               await _provider.addSale(
-  //                                 cartItems: _cartItems,
-  //                                 totalAmount: _totalAmount,
-  //                                 paymentType: 'credit', // تحديد نوع البيع
-  //                                 customerId:
-  //                                     _selectedCustomer!.id, // تمرير الـ ID
-  //                               );
-
-  //                               // عرض تأكيد البيع بعد اختيار الزبون
-  //                               showDialog(
-  //                                 context: context,
-  //                                 builder:
-  //                                     (context) => AlertDialog(
-  //                                       title: const Text('إتمام البيع'),
-  //                                       content: const Column(
-  //                                         mainAxisSize: MainAxisSize.min,
-  //                                         children: [
-  //                                           Icon(
-  //                                             Icons.check_circle,
-  //                                             size: 60,
-  //                                             color: Colors.green,
-  //                                           ),
-  //                                           SizedBox(height: 16),
-  //                                           Text('تم إتمام عملية البيع بنجاح'),
-  //                                         ],
-  //                                       ),
-  //                                       actions: [
-  //                                         ElevatedButton(
-  //                                           onPressed:
-  //                                               () => Navigator.pop(context),
-  //                                           style: ElevatedButton.styleFrom(
-  //                                             backgroundColor: Colors.green,
-  //                                           ),
-  //                                           child: const Text('تم'),
-  //                                         ),
-  //                                       ],
-  //                                     ),
-  //                               );
-  //                             },
-  //                     style: ElevatedButton.styleFrom(
-  //                       backgroundColor: Colors.green,
-  //                     ),
-  //                     child: const Text('إتمام البيع'),
-  //                   ),
-  //                 ],
-  //               );
-  //             },
-  //           );
-  //         },
-  //       );
-  //     },
-  //   );
-  // }
 
   void _clearCart() {
     if (_cartItems.isEmpty) return;

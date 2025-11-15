@@ -75,6 +75,7 @@ class DBHelper {
     total_profit REAL NOT NULL DEFAULT 0,
     customer_id INTEGER, 
     payment_type TEXT NOT NULL DEFAULT 'cash', 
+    show_for_tax INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (customer_id) REFERENCES customers (id)
   );
 

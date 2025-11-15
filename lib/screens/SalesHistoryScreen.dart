@@ -96,6 +96,9 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                   // فلتر التاريخ
                   Expanded(child: _buildCompactDateFilter(provider)),
                   const SizedBox(width: 12), // مسافة أكبر
+                  // فلتر نوع الضريبة
+                  Expanded(child: _buildCompactTaxFilter(provider)),
+                  //
                   // زر المسح
                   _buildCompactClearButton(provider),
                 ],
@@ -104,6 +107,84 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildCompactTaxFilter(SalesProvider provider) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'نوع الضريبة',
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.grey[700],
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: provider.selectedTaxFilter,
+              items: [
+                DropdownMenuItem(
+                  value: 'الكل',
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      'الكل',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'مضمنه بالضرائب',
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      'مضمنه بالضرائب',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'غير مضمنه بالضرائب',
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      'غير مضمنه بالضرائب',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: provider.setTaxFilter,
+              icon: Icon(
+                Icons.arrow_drop_down,
+                size: 20,
+                color: Colors.grey[600],
+              ),
+              isExpanded: true,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -431,14 +512,18 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                         ),
                       ],
                       rows:
-                          provider.sales.map((sale) {
+                          provider.sales.asMap().entries.map((entry) {
+                            final index = entry.key; // رقم تسلسلي (0,1,2,...)
+                            final sale = entry.value; // عنصر الفاتورة
+
                             return DataRow(
                               onSelectChanged:
                                   (_) => _showSaleDetails(sale.id, context),
                               cells: [
                                 DataCell(
                                   Text(
-                                    sale.id.toString(),
+                                    (index + 1)
+                                        .toString(), // الرقم التسلسلي بدل sale.id
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,

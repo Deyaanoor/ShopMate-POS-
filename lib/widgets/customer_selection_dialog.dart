@@ -17,6 +17,7 @@ class CustomerSelectionDialog extends StatefulWidget {
 class _CustomerSelectionDialogState extends State<CustomerSelectionDialog> {
   Customer? _selectedCustomer;
   bool _isLoading = true;
+  List<Customer> _customers = [];
 
   @override
   void initState() {
@@ -25,30 +26,30 @@ class _CustomerSelectionDialogState extends State<CustomerSelectionDialog> {
   }
 
   Future<void> _fetchCustomers() async {
-    final provider = Provider.of<CustomerProvider>(context, listen: false);
-    await provider
-        .fetchCustomers(); // استخدم fetchCustomers بدلاً من loadCustomers
-    setState(() {
-      _isLoading = false;
-    });
+    try {
+      final provider = Provider.of<CustomerProvider>(context, listen: false);
+      await provider.fetchCustomers();
+      setState(() {
+        _customers = provider.customers;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      // يمكن إضافة معالجة الخطأ هنا
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text(
-        'اختر الزبون',
+        'اختر الزبون للبيع الآجل',
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
       ),
-      content: Consumer<CustomerProvider>(
-        builder: (context, provider, _) {
-          if (_isLoading) {
-            return _buildLoadingIndicator();
-          }
-          return _buildDialogContent(provider);
-        },
-      ),
+      content: _isLoading ? _buildLoadingIndicator() : _buildDialogContent(),
       actions: _buildDialogActions(),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     );
@@ -70,22 +71,22 @@ class _CustomerSelectionDialogState extends State<CustomerSelectionDialog> {
     );
   }
 
-  Widget _buildDialogContent(CustomerProvider provider) {
+  Widget _buildDialogContent() {
     return SizedBox(
       width: double.maxFinite,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildCustomerDropdown(provider),
+          _buildCustomerDropdown(),
           const SizedBox(height: 16),
-          _buildAddCustomerButton(provider),
+          _buildAddCustomerButton(),
         ],
       ),
     );
   }
 
-  Widget _buildCustomerDropdown(CustomerProvider provider) {
-    if (provider.customers.isEmpty) {
+  Widget _buildCustomerDropdown() {
+    if (_customers.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 20),
         child: Text(
@@ -108,7 +109,7 @@ class _CustomerSelectionDialogState extends State<CustomerSelectionDialog> {
       hint: const Text('اختر زبون'),
       isExpanded: true,
       items:
-          provider.customers.map((customer) {
+          _customers.map((customer) {
             return DropdownMenuItem(
               value: customer,
               child: Text(customer.name, style: const TextStyle(fontSize: 16)),
@@ -118,11 +119,11 @@ class _CustomerSelectionDialogState extends State<CustomerSelectionDialog> {
     );
   }
 
-  Widget _buildAddCustomerButton(CustomerProvider provider) {
+  Widget _buildAddCustomerButton() {
     return OutlinedButton.icon(
       icon: const Icon(Icons.add, size: 20),
       label: const Text('إضافة زبون جديد', style: TextStyle(fontSize: 14)),
-      onPressed: () => _handleAddNewCustomer(provider),
+      onPressed: () => _handleAddNewCustomer(),
       style: OutlinedButton.styleFrom(
         foregroundColor: Colors.blue,
         side: const BorderSide(color: Colors.blue),
@@ -132,43 +133,30 @@ class _CustomerSelectionDialogState extends State<CustomerSelectionDialog> {
     );
   }
 
-  void _handleAddNewCustomer(CustomerProvider provider) {
-    Navigator.pop(context);
+  void _handleAddNewCustomer() {
     showDialog(
       context: context,
       builder:
           (context) => CustomerFormDialog(
             onSave: (customer) async {
-              await provider.addCustomer(customer);
-              _showSuccessSnackBar(customer.name);
-              // إعادة فتح dialog اختيار الزبون بعد الإضافة مع تحديث البيانات
-              _reopenCustomerSelectionDialog();
+              try {
+                final provider = Provider.of<CustomerProvider>(
+                  context,
+                  listen: false,
+                );
+                await provider.addCustomer(customer);
+                Navigator.pop(context); // إغلاق dialog إضافة الزبون
+                await _fetchCustomers(); // إعادة تحميل العملاء
+
+                // اختيار الزبون المضاف تلقائياً
+                setState(() {
+                  _selectedCustomer = customer;
+                });
+              } catch (e) {
+                // معالجة الخطأ هنا
+              }
             },
           ),
-    );
-  }
-
-  void _reopenCustomerSelectionDialog() {
-    // استخدام Future.delayed لضمان إغلاق الـ Dialog الحالي أولاً
-    Future.delayed(Duration.zero, () {
-      showDialog(
-        context: context,
-        builder:
-            (context) => CustomerSelectionDialog(
-              onSaleCompleted: widget.onSaleCompleted,
-            ),
-      );
-    });
-  }
-
-  void _showSuccessSnackBar(String customerName) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('تم إضافة العميل $customerName'),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
     );
   }
 
@@ -182,7 +170,7 @@ class _CustomerSelectionDialogState extends State<CustomerSelectionDialog> {
         ),
       ),
       ElevatedButton(
-        onPressed: _selectedCustomer == null ? null : () => _completeSale(),
+        onPressed: _selectedCustomer == null ? null : _completeSelection,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.green,
           shape: RoundedRectangleBorder(
@@ -191,15 +179,14 @@ class _CustomerSelectionDialogState extends State<CustomerSelectionDialog> {
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         ),
         child: const Text(
-          'إتمام البيع',
+          'اختيار',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ),
     ];
   }
 
-  void _completeSale() {
-    Navigator.pop(context);
-    widget.onSaleCompleted(_selectedCustomer!);
+  void _completeSelection() {
+    Navigator.pop(context, _selectedCustomer);
   }
 }

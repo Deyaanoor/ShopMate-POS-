@@ -7,6 +7,7 @@ class Sale {
   final int? customerId;
   final String paymentType;
   final String? customerName;
+  final bool showForTax; // الحقل الجديد
 
   Sale({
     required this.id,
@@ -16,6 +17,7 @@ class Sale {
     this.customerId,
     required this.paymentType,
     this.customerName,
+    required this.showForTax, // إضافة في الكونستركتور
   });
 
   factory Sale.fromMap(Map<String, dynamic> map) {
@@ -27,6 +29,7 @@ class Sale {
       customerId: map['customer_id'],
       paymentType: map['payment_type'] ?? 'cash',
       customerName: map['customer_name'],
+      showForTax: (map['show_for_tax'] ?? 0) == 1, // تحويل 0/1 إلى bool
     );
   }
 

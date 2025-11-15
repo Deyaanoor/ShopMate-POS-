@@ -137,19 +137,47 @@ class ProductProvider with ChangeNotifier {
   Future<void> addSale({
     required List<CartItem> cartItems,
     required double totalAmount,
-    String paymentType = 'cash', // افتراضي نقد
-    int? customerId, // للزبون عند البيع بالآجل
+    String paymentType = 'cash',
+    int? customerId,
   }) async {
     final db = await _dbHelper.db;
 
+    // التحقق من الكميات قبل بدء المعاملة
+    for (var item in cartItems) {
+      final product = item.product;
+
+      // جلب الكمية الحالية من قاعدة البيانات
+      final List<Map<String, dynamic>> result = await db.query(
+        'products',
+        columns: ['quantity', 'name'],
+        where: 'id = ?',
+        whereArgs: [product.id],
+      );
+
+      if (result.isNotEmpty) {
+        final int currentQuantity = result.first['quantity'] as int;
+        final String productName = result.first['name'] as String;
+
+        if (currentQuantity < item.quantity) {
+          // إلقاء استثناء يوقف العملية كاملة
+          throw Exception(
+            'المنتج "$productName" لا يوجد به كمية كافية. الكمية المتاحة: $currentQuantity',
+          );
+        }
+      } else {
+        throw Exception('المنتج غير موجود في قاعدة البيانات');
+      }
+    }
+
+    // إذا كل المنتجات كافية، نكمل العملية
     await db.transaction((txn) async {
       // 1️⃣ إضافة صف في جدول sales مع دعم credit و customer_id
       final saleId = await txn.insert('sales', {
         'date': DateTime.now().toIso8601String(),
         'total_amount': totalAmount,
         'total_profit': 0.0,
-        'customer_id': customerId, // ممكن يكون null إذا نقد
-        'payment_type': paymentType, // cash أو credit
+        'customer_id': customerId,
+        'payment_type': paymentType,
       });
 
       double totalProfit = 0.0;
